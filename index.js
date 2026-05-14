@@ -10,14 +10,28 @@ require('dotenv').config();
 const app    = express();
 const server = http.createServer(app);
 
+// Frontend URL Variable (Taake bar bar change na karna pare)
+const FRONTEND_URL = 'https://chat-app-frontend-rust-six.vercel.app';
+
+// 1. Socket.io mein sahi CORS configuration
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { 
+    origin: FRONTEND_URL,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
 });
 
-app.use(cors({ origin: '*' }));
+// 2. Express Application mein sahi CORS configuration
+app.use(cors({ 
+  origin: FRONTEND_URL,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
 app.use(express.json());
 
-mongoose.connect('mongodb+srv://shakiralibhatti295_db_user:INWzrBtlgeYZS62S@chatapp.sbrdbgf.mongodb.net/?appName=chatapp')
+mongoose.connect(process.env.MONGO_URL)
   .then(() => console.log('MongoDB connect ho gaya!'))
   .catch((err) => console.log('Error:', err));
 
@@ -31,6 +45,7 @@ const User = mongoose.model('User', userSchema);
 const messageSchema = new mongoose.Schema({
   name: String,
   text: String,
+  createdAt: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
 
@@ -59,18 +74,35 @@ app.get('/messages', async (req, res) => {
   res.json(messages);
 });
 
+app.delete('/messages/:id', async (req, res) => {
+  try {
+    console.log('Deleting message ID:', req.params.id);
+    const message = await Message.findByIdAndDelete(req.params.id);
+    console.log('Delete result:', message);
+    if (message) {
+      res.status(200).json({ success: true, deletedMessage: message });
+    } else {
+      res.status(404).json({ error: 'Message nahi mila' });
+    }
+  } catch (err) {
+    console.error('Delete error:', err);
+    res.status(500).json({ error: 'Delete mein error: ' + err.message });
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('Naya user connect hua!');
   socket.on('message', async (data) => {
     const message = new Message(data);
-    await message.save();
-    io.emit('message', data);
+    const savedMessage = await message.save();
+    io.emit('message', { ...data, _id: savedMessage._id });
   });
   socket.on('disconnect', () => {
     console.log('User chala gaya!');
   });
 });
 
-server.listen(5000, () => {
-  console.log('Server port 5000 pe chal raha hai');
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`Server port ${PORT} pe chal raha hai`);
 });
